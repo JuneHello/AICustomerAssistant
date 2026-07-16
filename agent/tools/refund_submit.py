@@ -65,17 +65,41 @@ async def submit_refund(
                     "message": "该订单已有一笔待处理的退款申请",
                 }
 
+            # 安全解析 UUID（支持将任意非 UUID 字符串转换为确定性的 UUID v5）
+            import uuid
+            
+            raw_tenant = kwargs.get("tenant_id")
+            if not raw_tenant:
+                raw_tenant = "00000000-0000-0000-0000-000000000001"
+            try:
+                tenant_uuid = uuid.UUID(str(raw_tenant))
+            except ValueError:
+                tenant_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(raw_tenant))
+                
+            raw_session = kwargs.get("session_id")
+            session_uuid = None
+            if raw_session:
+                try:
+                    session_uuid = uuid.UUID(str(raw_session))
+                except ValueError:
+                    session_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(raw_session))
+
             refund = PendingRefund(
+                tenant_id=tenant_uuid,
+                session_id=session_uuid,
                 order_id=order_id,
+                user_id=str(kwargs.get("user_id", "unknown_user")),
                 amount=amount,
                 reason=reason,
-                idempotency_key=idempotency_key,
-                ai_checks={
-                    "order_verified": True,
-                    "eligibility_checked": True,
-                    "risk_level": "normal" if amount <= 500 else "high",
-                },
                 status="pending",
+                metadata_={
+                    "idempotency_key": idempotency_key,
+                    "ai_checks": {
+                        "order_verified": True,
+                        "eligibility_checked": True,
+                        "risk_level": "normal" if amount <= 500 else "high",
+                    }
+                }
             )
             session.add(refund)
 

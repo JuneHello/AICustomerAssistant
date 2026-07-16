@@ -22,6 +22,7 @@ from agent.nodes.response_synthesizer import response_synthesizer
 from agent.nodes.human_interrupt import human_interrupt
 from agent.nodes.post_approval_handler import post_approval_handler
 from agent.nodes.escalation_handler import escalation_handler
+from agent.nodes.entity_extractor import entity_extractor
 
 logger = structlog.get_logger()
 
@@ -39,14 +40,22 @@ def _route_by_intent(state: AgentState) -> str:
 
     if intent in ("faq",):
         return "rag_retriever"
-    elif intent in ("order_query", "logistics_query"):
-        return "tool_executor"
-    elif intent == "refund_request":
-        return "tool_executor_refund"
+    elif intent in ("order_query", "logistics_query", "refund_request"):
+        return "entity_extractor"
     elif intent in ("human_request", "complaint"):
         return "escalation_handler"
     else:
         return "rag_retriever"  # 默认走 RAG
+
+
+def _route_after_extraction(state: AgentState) -> str:
+    """实体提取后的条件路由：根据意图流向对应的工具。"""
+    intent = state.get("intent", "")
+    if intent == "refund_request":
+        return "tool_executor_refund"
+    elif intent in ("order_query", "logistics_query"):
+        return "tool_executor"
+    return "response_synthesizer"
 
 
 def _route_after_tool(state: AgentState) -> str:
@@ -78,6 +87,7 @@ def build_graph() -> StateGraph:
     # ── 注册节点 ──────────────────────────────────────────────
     graph.add_node("input_guardrails", input_guardrails)
     graph.add_node("intent_router", intent_router)
+    graph.add_node("entity_extractor", entity_extractor)
     graph.add_node("rag_retriever", rag_retriever)
     graph.add_node("tool_executor", tool_executor)
     graph.add_node("tool_executor_refund", tool_executor)  # 复用同一函数
@@ -108,9 +118,19 @@ def build_graph() -> StateGraph:
         _route_by_intent,
         {
             "rag_retriever": "rag_retriever",
+            "entity_extractor": "entity_extractor",
+            "escalation_handler": "escalation_handler",
+        },
+    )
+
+    # 实体提取 → 条件分发到对应工具
+    graph.add_conditional_edges(
+        "entity_extractor",
+        _route_after_extraction,
+        {
             "tool_executor": "tool_executor",
             "tool_executor_refund": "tool_executor_refund",
-            "escalation_handler": "escalation_handler",
+            "response_synthesizer": "response_synthesizer",
         },
     )
 

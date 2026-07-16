@@ -33,10 +33,10 @@ class Settings(BaseSettings):
         default=SecretStr(""), description="API key for DeepSeek models"
     )
     PRIMARY_LLM: str = Field(
-        default="xiaomi_mimo/mimo-v2.5", description="Primary model name for LiteLLM"
+        default="deepseek/deepseek-chat", description="Primary model name for LiteLLM"
     )
     SMALL_LLM: str = Field(
-        default="xiaomi_mimo/mimo-v2.5", description="Small/fallback model name for LiteLLM"
+        default="deepseek/deepseek-chat", description="Small/fallback model name for LiteLLM"
     )
     DEEPSEEK_BASE_URL: str = Field(
         default="https://api.deepseek.com/v1",
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         description="Async PostgreSQL DSN",
     )
     POSTGRES_USER: str = Field(default="postgres")
-    POSTGRES_PASSWORD: SecretStr = Field(default="postgres")
+    POSTGRES_PASSWORD: SecretStr = Field(default=SecretStr("postgres"))
     POSTGRES_DB: str = Field(default="ai_assistant")
 
     # ── Redis ─────────────────────────────────────────────────────────
@@ -86,12 +86,8 @@ class Settings(BaseSettings):
     )
 
     # ── Application ───────────────────────────────────────────────────
-    APP_ENV: Literal["development", "staging", "production"] = Field(
-        default="development"
-    )
-    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
-        default="INFO"
-    )
+    APP_ENV: Literal["development", "staging", "production"] = "development"
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     # ── Agent / RAG Tuning ────────────────────────────────────────────
     SESSION_TOKEN_BUDGET: int = Field(
@@ -131,6 +127,8 @@ def get_settings() -> Settings:
         os.environ["XIAOMI_MIMO_API_KEY"] = s.XIAOMI_MIMO_API_KEY.get_secret_value()
     if s.DEEPSEEK_API_KEY and s.DEEPSEEK_API_KEY.get_secret_value():
         os.environ["DEEPSEEK_API_KEY"] = s.DEEPSEEK_API_KEY.get_secret_value()
+        if s.DEEPSEEK_BASE_URL:
+            os.environ["DEEPSEEK_API_BASE"] = s.DEEPSEEK_BASE_URL
         
     # Export Langfuse environment variables
     if s.LANGFUSE_SECRET_KEY and s.LANGFUSE_SECRET_KEY.get_secret_value():

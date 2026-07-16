@@ -8,11 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
 import structlog
 from langgraph.types import Command
+from langchain_core.runnables import RunnableConfig
 
 from agent.graph import agent_graph
 from api.middleware.auth import verify_jwt_token, UserContext
 from db.connections import get_redis_client, PgSession
-from db.pg_models import PendingRefund
+from db.pg_models import PendingRefund, RefundStatus
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -30,7 +31,7 @@ async def list_pending_refunds(
             select(PendingRefund)
             .where(
                 PendingRefund.tenant_id == context.tenant_id,
-                PendingRefund.status == "pending",
+                PendingRefund.status == RefundStatus.PENDING,
             )
             .limit(limit)
             .offset(offset)
@@ -44,7 +45,7 @@ async def list_pending_refunds(
                 "order_id": r.order_id,
                 "amount": float(r.amount),
                 "reason": r.reason,
-                "ai_checks": r.ai_checks,
+                "ai_checks": r.metadata_.get("ai_checks") if r.metadata_ else None,
                 "created_at": r.created_at.isoformat(),
             }
             for r in refunds
@@ -72,19 +73,19 @@ async def approve_refund(
                 status_code=status.HTTP_404_NOT_FOUND, detail="退款审批单不存在"
             )
 
-        if refund.status != "pending":
+        if refund.status != RefundStatus.PENDING:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"审批单已处理过，当前状态为: {refund.status}",
             )
 
-        refund.status = "approved"
-        refund.approver_id = context.user_id
+        refund.status = RefundStatus.APPROVED
+        refund.reviewed_by = context.user_id
         await session.commit()
 
         # 2. 恢复挂起的 LangGraph 节点
         # 使用 Command(resume=...) 发送通过信号给挂起的 human_interrupt 节点
-        config = {"configurable": {"thread_id": refund.session_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": str(refund.session_id)}}
         resume_payload = {
             "approved": True,
             "approver_id": context.user_id,
@@ -140,12 +141,12 @@ async def reject_refund(
                 status_code=status.HTTP_404_NOT_FOUND, detail="退款审批单不存在"
             )
 
-        refund.status = "rejected"
-        refund.approver_id = context.user_id
+        refund.status = RefundStatus.REJECTED
+        refund.reviewed_by = context.user_id
         await session.commit()
 
         # 恢复状态机，并告知拒绝原因
-        config = {"configurable": {"thread_id": refund.session_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": str(refund.session_id)}}
         resume_payload = {"approved": False, "reason": reason}
 
         await agent_graph.ainvoke(Command(resume=resume_payload), config=config)

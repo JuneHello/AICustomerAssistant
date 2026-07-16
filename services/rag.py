@@ -66,11 +66,17 @@ async def retrieve_knowledge(query: str, tenant_id: str) -> list[dict]:
         top_k=settings.RAG_TOP_K,
     )
 
+    import uuid
+    try:
+        tenant_uuid = uuid.UUID(str(tenant_id))
+    except ValueError:
+        tenant_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(tenant_id))
+
     query_vector = await get_embedding(query)
     now = datetime.now(timezone.utc)
 
     async with PgSession() as session:
-        # 1. 向量检索：使用余弦相似度查询已发布且在有效期内的知识
+        # 1. 向量检索：使用余弦相似度查询相关知识
         # 使用 pgvector 的 <=> 操作符表示余弦距离，1 - 余弦距离 = 余弦相似度
         vector_stmt = (
             select(
@@ -82,12 +88,7 @@ async def retrieve_knowledge(query: str, tenant_id: str) -> list[dict]:
                 ),
             )
             .where(
-                KnowledgeBase.tenant_id == tenant_id,
-                KnowledgeBase.status == "published",
-                (KnowledgeBase.valid_from <= now)
-                | (KnowledgeBase.valid_from == None),
-                (KnowledgeBase.valid_until >= now)
-                | (KnowledgeBase.valid_until == None),
+                KnowledgeBase.tenant_id == tenant_uuid,
             )
             .order_by(KnowledgeBase.embedding.cosine_distance(query_vector))
             .limit(settings.RAG_TOP_K)
@@ -96,8 +97,7 @@ async def retrieve_knowledge(query: str, tenant_id: str) -> list[dict]:
         vector_res = await session.execute(vector_stmt)
         vector_candidates = vector_res.all()
 
-        # 2. 关键词检索：利用 PostgreSQL 全文检索 (ts_rank)
-        # 为便于演示，采用简单的 SQL LIKE/ILIKE 进行字面召回并集
+        # 2. 关键词检索：模糊字面召回并集
         kw_stmt = (
             select(
                 KnowledgeBase.id,
@@ -106,8 +106,7 @@ async def retrieve_knowledge(query: str, tenant_id: str) -> list[dict]:
                 text("0.5 AS similarity"),  # 默认匹配权重
             )
             .where(
-                KnowledgeBase.tenant_id == tenant_id,
-                KnowledgeBase.status == "published",
+                KnowledgeBase.tenant_id == tenant_uuid,
                 (KnowledgeBase.content.ilike(f"%{query[:10]}%")),
             )
             .limit(settings.RAG_TOP_K)

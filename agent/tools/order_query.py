@@ -28,7 +28,7 @@ async def query_order(
 
     async with MysqlSession() as session:
         if order_id:
-            stmt = select(Order).where(Order.order_id == order_id)
+            stmt = select(Order).where(Order.order_no == order_id)
         elif user_id:
             stmt = (
                 select(Order)
@@ -48,7 +48,7 @@ async def query_order(
         order_list = []
         for order in orders:
             order_list.append({
-                "order_id": order.order_id,
+                "order_id": order.order_no,
                 "user_id": order.user_id,
                 "status": order.status.value if hasattr(order.status, "value") else str(order.status),
                 "total_amount": float(order.total_amount),

@@ -22,9 +22,10 @@ async def response_synthesizer(state: AgentState) -> dict:
     3. 调用 LLM 生成回复
     4. 返回 AIMessage 追加到 state.messages
     """
-    intent = state.get("intent", "faq")
+    intent = state.get("intent") or "faq"
     entities = state.get("entities", {})
     rag_context = state.get("rag_context", [])
+    tool_outputs = state.get("tool_outputs", [])
     messages = state["messages"]
 
     # 1. 动态装配 System Prompt
@@ -32,6 +33,7 @@ async def response_synthesizer(state: AgentState) -> dict:
         intent=intent,
         entities=entities,
         rag_context=rag_context,
+        tool_outputs=tool_outputs,
     )
 
     # 2. 构建 LLM 消息序列 — 滑动窗口保留最近 3 轮
@@ -41,7 +43,8 @@ async def response_synthesizer(state: AgentState) -> dict:
     recent_messages = messages[-6:] if len(messages) > 6 else messages
     for msg in recent_messages:
         role = "user" if msg.type == "human" else "assistant"
-        llm_messages.append({"role": role, "content": msg.content})
+        content_str = str(msg.content) if not isinstance(msg.content, str) else msg.content
+        llm_messages.append({"role": role, "content": content_str})
 
     # 3. 注入工具错误提示（如果有）
     tool_error = entities.get("tool_error")

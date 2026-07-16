@@ -79,14 +79,20 @@ def extract_specific_sop(agents_content: str, intent: str) -> str:
     return "\n".join(extracted_sections)
 
 
-def assemble_prompt(intent: str, entities: dict, rag_context: list[str] = None) -> str:
+def assemble_prompt(
+    intent: str,
+    entities: dict,
+    rag_context: list[str] | None = None,
+    tool_outputs: list[dict] | None = None,
+) -> str:
     """拼装 System Prompt。
 
     结构：
     1. SOUL.md - 全局人格与沟通语气
     2. 抽取的业务 SOP - 针对当前意图的业务细则
     3. 当前锁定的实体 (Entities Lock) - 辅助 LLM 进行逻辑判断，避免从摘要中提取
-    4. RAG 召回的外部知识片段 (如有)
+    4. 外部工具执行返回明细数据 (如有)
+    5. RAG 召回的外部知识片段 (如有)
     """
     soul = get_soul()
     full_sop = get_agents_sop()
@@ -99,6 +105,15 @@ def assemble_prompt(intent: str, entities: dict, rag_context: list[str] = None) 
         for k, v in entities.items():
             if v is not None:
                 entities_str += f"- **{k}**: {v}\n"
+
+    # 构造工具执行输出信息
+    tool_outputs_str = ""
+    if tool_outputs:
+        import json
+        tool_outputs_str = "\n### 外部工具执行返回明细数据 (已由系统核实为真实业务数据)\n"
+        for i, output in enumerate(tool_outputs, 1):
+            serialized = json.dumps(output, ensure_ascii=False)
+            tool_outputs_str += f"- 记录 [{i}]: {serialized}\n"
 
     # 构造 RAG 知识库信息
     rag_str = ""
@@ -114,8 +129,9 @@ def assemble_prompt(intent: str, entities: dict, rag_context: list[str] = None) 
         "【当前业务操作规范 (SOP)】\n"
         f"{specific_sop}\n"
         f"{entities_str}"
+        f"{tool_outputs_str}"
         f"{rag_str}\n"
-        "请严格根据以上【业务操作规范】和【召回的知识库参考资料】对用户进行回复。"
+        "请严格根据以上【业务操作规范】、【外部工具执行返回明细数据】和【召回的知识库参考资料】对用户进行回复。"
         "对于需要填写单据、查询数据的敏感意图，你必须参考已锁定的数据（如有）。"
         "如果召回资料不包含用户需要的信息，请向用户坦白表示不知道或委婉引导转人工客服，切勿编造虚假承诺、价格或政策。"
     )

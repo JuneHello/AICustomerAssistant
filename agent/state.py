@@ -47,3 +47,7 @@ class AgentState(TypedDict):
 
     # RAG 召回的知识片段
     rag_context: list[str]
+
+    # 最近工具执行明细结果（供 LLM 回复生成使用）
+    tool_outputs: list[dict]
+

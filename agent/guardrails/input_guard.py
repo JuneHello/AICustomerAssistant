@@ -34,11 +34,11 @@ BANK_CARD_PATTERN = re.compile(
 
 # ── 越狱关键词 ──────────────────────────────────────────────────
 JAILBREAK_PATTERNS = [
-    re.compile(r"忽略.*(?:之前|以上|上面).*(?:指令|提示|规则|设定)", re.IGNORECASE),
-    re.compile(r"(?:假装|扮演|角色扮演).*(?:不是|不再是).*(?:客服|助手)", re.IGNORECASE),
+    re.compile(r"忽略.*(?:之前|以上|上面|当前|系统|你|我|客服)?.*(?:指令|提示|规则|设定|定位|角色)", re.IGNORECASE),
+    re.compile(r"(?:假装|扮演|角色扮演).*(?:不是|不再是|是).*(?:客服|助手|工程师|总工)", re.IGNORECASE),
     re.compile(r"(?:system\s*prompt|系统提示词|内部指令)", re.IGNORECASE),
     re.compile(r"(?:DAN|developer\s*mode|越狱模式)", re.IGNORECASE),
-    re.compile(r"(?:ignore|disregard).*(?:previous|above).*(?:instructions|rules)", re.IGNORECASE),
+    re.compile(r"(?:ignore|disregard).*(?:previous|above|current)?.*(?:instructions|rules|settings|role)", re.IGNORECASE),
 ]
 
 # 内容长度限制
@@ -101,7 +101,8 @@ async def input_guardrails(state: AgentState) -> dict:
         return {}
 
     last_message = messages[-1]
-    content = last_message.content if hasattr(last_message, "content") else str(last_message)
+    raw_content = last_message.content if hasattr(last_message, "content") else str(last_message)
+    content = str(raw_content) if not isinstance(raw_content, str) else raw_content
 
     # 1. 内容长度校验
     if len(content) > MAX_MESSAGE_LENGTH:

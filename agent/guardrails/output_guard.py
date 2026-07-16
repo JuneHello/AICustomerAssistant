@@ -91,7 +91,8 @@ async def output_guardrails(state: AgentState) -> dict:
     if not last_ai_message:
         return {}
 
-    reply_content = last_ai_message.content
+    raw_content = last_ai_message.content
+    reply_content = str(raw_content) if not isinstance(raw_content, str) else raw_content
     issues = []
 
     # 1. 竞品品牌检查

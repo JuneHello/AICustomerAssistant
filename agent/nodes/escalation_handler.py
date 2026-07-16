@@ -25,15 +25,16 @@ async def escalation_handler(state: AgentState) -> dict:
     tenant_id = state.get("tenant_id", "")
     user_id = state.get("user_id", "")
     entities = state.get("entities", {})
-    escalation_reason = state.get("escalation_reason", "unknown")
+    escalation_reason = state.get("escalation_reason") or "unknown"
     messages = state.get("messages", [])
 
     # 提取最近 3 轮原始对话
     recent_messages = []
     for msg in messages[-6:]:
+        content_str = str(msg.content) if not isinstance(msg.content, str) else msg.content
         recent_messages.append({
             "role": "user" if msg.type == "human" else "assistant",
-            "content": msg.content[:500],  # 截断过长消息
+            "content": content_str[:500],  # 截断过长消息
         })
 
     # 构建 Handoff Payload

@@ -24,9 +24,8 @@ async def rag_retriever(state: AgentState) -> dict:
         return {"rag_context": []}
 
     last_message = messages[-1]
-    query = (
-        last_message.content if hasattr(last_message, "content") else str(last_message)
-    )
+    raw_query = last_message.content if hasattr(last_message, "content") else str(last_message)
+    query = str(raw_query) if not isinstance(raw_query, str) else raw_query
     tenant_id = state.get("tenant_id", "")
 
     logger.info("rag_retriever.searching", query=query[:100], tenant_id=tenant_id)

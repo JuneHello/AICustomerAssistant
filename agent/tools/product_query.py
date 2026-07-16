@@ -29,7 +29,7 @@ async def query_product(
 
     async with MysqlSession() as session:
         if product_id:
-            stmt = select(Product).where(Product.product_id == product_id)
+            stmt = select(Product).where(Product.id == int(product_id) if isinstance(product_id, str) and product_id.isdigit() else Product.id == product_id)
         elif keyword:
             stmt = (
                 select(Product)
@@ -48,7 +48,7 @@ async def query_product(
         product_list = []
         for p in products:
             product_list.append({
-                "product_id": p.product_id,
+                "product_id": str(p.id),
                 "name": p.name,
                 "price": float(p.price),
                 "category": p.category,

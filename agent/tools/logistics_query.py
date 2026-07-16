@@ -26,7 +26,7 @@ async def query_logistics(order_id: str, **kwargs) -> dict:
         return {"status": "error", "message": "请提供订单号"}
 
     async with MysqlSession() as session:
-        stmt = select(Order).where(Order.order_id == order_id)
+        stmt = select(Order).where(Order.order_no == order_id)
         result = await session.execute(stmt)
         order = result.scalar_one_or_none()
 

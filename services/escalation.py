@@ -26,10 +26,10 @@ class EscalationEngine:
         redis_client = await get_redis_client()
         
         # 1. 写入会话挂起队列
-        await redis_client.hset(f"escalated_sessions:{tenant_id}", session_id, json.dumps(event_data, ensure_ascii=False))
+        await redis_client.hset(f"escalated_sessions:{tenant_id}", session_id, json.dumps(event_data, ensure_ascii=False))  # type: ignore[misc]
         
         # 2. 发布事件到通道，通知监听中的前端/排队系统
-        await redis_client.publish(
+        await redis_client.publish(  # type: ignore[misc]
             f"session:{session_id}",
             json.dumps({"event": "escalated", "data": f"已触发转人工服务。原因: {reason}"}, ensure_ascii=False)
         )

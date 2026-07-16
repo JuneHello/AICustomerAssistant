@@ -29,7 +29,8 @@ async def send_message(
     logger.info("chat.send", session_id=session_id, user_id=context.user_id)
 
     # 1. 组装输入状态
-    initial_state = {
+    from agent.state import AgentState
+    initial_state: AgentState = {
         "messages": [HumanMessage(content=content)],
         "session_id": session_id,
         "tenant_id": context.tenant_id,
@@ -40,11 +41,13 @@ async def send_message(
         "pending_approval": None,
         "escalation_reason": None,
         "rag_context": [],
+        "tool_outputs": [],
     }
 
     # 2. 运行状态机
     # thread_id 用于持久化 state checkpoint
-    config = {"configurable": {"thread_id": session_id}}
+    from langchain_core.runnables import RunnableConfig
+    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
 
     try:
         final_state = await agent_graph.ainvoke(initial_state, config=config)

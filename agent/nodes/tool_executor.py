@@ -65,9 +65,12 @@ async def tool_executor(state: AgentState) -> dict:
     根据 state.intent 分发到对应工具。实现三级错误处理。
     循环保护：tool_call_count >= MAX_TOOL_ITERATIONS 时强制转人工。
     """
-    intent = state.get("intent", "")
+    intent = state.get("intent")
     tool_call_count = state.get("tool_call_count", 0)
     entities = state.get("entities", {})
+
+    if not intent:
+        return {"tool_call_count": tool_call_count}
 
     # 循环保护
     if tool_call_count >= settings.MAX_TOOL_ITERATIONS:
@@ -95,13 +98,43 @@ async def tool_executor(state: AgentState) -> dict:
     )
 
     try:
-        result = await _execute_with_retry(tool_func, **entities)
+        # 1. 检查工具必填参数是否已在 entities 中提供
+        import inspect
+        underlying_func = getattr(tool_func, "func", None) or getattr(tool_func, "coroutine", None) or tool_func
+        sig = inspect.signature(underlying_func)  # type: ignore[arg-type]
+        missing_args = []
+        for name, param in sig.parameters.items():
+            if param.default is inspect.Parameter.empty and name not in ("kwargs", "args") and name not in entities:
+                missing_args.append(name)
+        
+        if missing_args:
+            arg_map = {
+                "order_id": "订单号",
+                "amount": "退款金额",
+                "product_id": "商品ID",
+                "tracking_number": "物流单号",
+            }
+            friendly_args = [arg_map.get(arg, arg) for arg in missing_args]
+            raise BusinessRejectionError(f"缺少查询所需的必要信息：{', '.join(friendly_args)}。请提供这些信息以继续。")
+
+        # 2. 执行工具
+        tool_args = {
+            **entities,
+            "session_id": state.get("session_id"),
+            "tenant_id": state.get("tenant_id"),
+            "user_id": state.get("user_id"),
+        }
+        result = await _execute_with_retry(tool_func, **tool_args)
 
         logger.info(
             "tool_executor.success",
             tool=tool_func.name,
             result_keys=list(result.keys()) if isinstance(result, dict) else "raw",
         )
+
+        # 3. 校验工具执行结果，如果是业务错误，主动抛出 BusinessRejectionError
+        if isinstance(result, dict) and result.get("status") == "error":
+            raise BusinessRejectionError(result.get("message", "工具执行发生业务错误"))
 
         # 工具输出清洗 — 保留精简摘要，防止上下文爆炸
         if isinstance(result, dict):
@@ -112,16 +145,22 @@ async def tool_executor(state: AgentState) -> dict:
         else:
             cleaned = {"status": "success", "data": str(result)[:500]}
 
-        # 合并工具返回的实体到 state.entities
+        # 4. 合并工具返回的实体到 state.entities，并清除可能残留的 tool_error
         new_entities = {**entities}
+        new_entities.pop("tool_error", None)
         if isinstance(result, dict):
-            for key in ("order_id", "order_status", "tracking_number", "refund_id"):
-                if key in result:
+            for key in ("order_id", "order_status", "tracking_number", "refund_id", "amount", "refund_reason"):
+                if key in result and result[key] is not None:
                     new_entities[key] = result[key]
+
+        # 5. 累加工具执行结果列表
+        old_tool_outputs = state.get("tool_outputs") or []
+        new_tool_outputs = old_tool_outputs + [cleaned]
 
         return {
             "entities": new_entities,
             "tool_call_count": tool_call_count + 1,
+            "tool_outputs": new_tool_outputs,
         }
 
     except BusinessRejectionError as e:
@@ -142,6 +181,8 @@ async def tool_executor(state: AgentState) -> dict:
 
     except Exception as e:
         # Level 3: 不可恢复
+        import traceback
+        traceback.print_exc()
         logger.error("tool_executor.unrecoverable", error=str(e), tool=tool_func.name)
         return {
             "escalation_reason": f"tool_unrecoverable_{tool_func.name}: {e}",
