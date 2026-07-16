@@ -1,0 +1,4 @@
+python-interpreter-path = "/opt/anaconda3/envs/ai-customer-assistant/bin/python"
+search_path = [
+  "."
+]

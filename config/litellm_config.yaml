@@ -1,0 +1,47 @@
+# LiteLLM Proxy / Router configuration
+# Docs: https://docs.litellm.ai/docs/proxy/configs
+model_list:
+  # ── Primary Model: DeepSeek-V3 ─────────────────────────────────────
+  - model_name: deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      api_base: os.environ/DEEPSEEK_BASE_URL
+      max_tokens: 4096
+      temperature: 0.3
+      timeout: 60
+      stream: true
+    model_info:
+      description: "DeepSeek-V3 — primary production model"
+      priority: 1
+
+  # ── Fallback Model: DeepSeek-V2-Lite ───────────────────────────────
+  - model_name: deepseek-chat-fallback
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      api_base: os.environ/DEEPSEEK_BASE_URL
+      max_tokens: 2048
+      temperature: 0.3
+      timeout: 30
+      stream: true
+    model_info:
+      description: "DeepSeek-V2-Lite — lightweight fallback"
+      priority: 2
+
+# ── Router Settings ──────────────────────────────────────────────────
+router_settings:
+  routing_strategy: simple-shuffle       # round-robin across healthy models
+  num_retries: 2                         # retry on transient failures
+  timeout: 120                           # overall request timeout (seconds)
+  retry_after: 5                         # wait between retries (seconds)
+  fallbacks:
+    - deepseek-chat:
+        - deepseek-chat-fallback
+  allowed_fails: 3                       # mark unhealthy after N consecutive fails
+  cooldown_time: 60                      # seconds before retrying an unhealthy model
+
+# ── General Settings ─────────────────────────────────────────────────
+general_settings:
+  master_key: os.environ/DEEPSEEK_API_KEY
+  drop_params: true                      # silently drop unsupported params
