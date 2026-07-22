@@ -56,24 +56,19 @@ async def intent_router(state: AgentState) -> dict:
 
     logger.info("intent_router.classifying", user_message=user_content[:100])
 
-    from config.settings import settings
+    from core.dependencies import container
+
     try:
-        response = await litellm.acompletion(
-            model=settings.PRIMARY_LLM,
+        result = await container.llm_provider.generate_json(
             messages=[
                 {"role": "system", "content": INTENT_CLASSIFICATION_PROMPT},
                 {"role": "user", "content": user_content},
             ],
             temperature=0.0,
-            max_tokens=100,
-            response_format={"type": "json_object"},
         )
 
-        result_text = response.choices[0].message.content.strip()
-        result = json.loads(result_text)
-
-        intent = result.get("intent", "faq")
-        confidence = result.get("confidence", 0.0)
+        intent = result.get("intent", "faq") if isinstance(result, dict) else "faq"
+        confidence = result.get("confidence", 0.0) if isinstance(result, dict) else 0.0
 
         # 校验意图有效性
         if intent not in VALID_INTENTS:
@@ -99,10 +94,6 @@ async def intent_router(state: AgentState) -> dict:
             confidence=confidence,
         )
         return {"intent": intent}
-
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.error("intent_router.parse_error", error=str(e))
-        return {"intent": "faq"}
 
     except Exception as e:
         logger.error("intent_router.llm_error", error=str(e))

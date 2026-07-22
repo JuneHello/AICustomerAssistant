@@ -65,21 +65,18 @@ async def response_synthesizer(state: AgentState) -> dict:
         has_tool_error=bool(tool_error),
     )
 
-    from config.settings import settings
+    from core.dependencies import container
+
     try:
-        response = await litellm.acompletion(
-            model=settings.PRIMARY_LLM,
+        reply_content = await container.llm_provider.generate(
             messages=llm_messages,
             temperature=0.7,
             max_tokens=1024,
         )
 
-        reply_content = response.choices[0].message.content.strip()
-
         logger.info(
             "response_synthesizer.completed",
             reply_length=len(reply_content),
-            tokens_used=response.usage.total_tokens if response.usage else 0,
         )
 
         return {

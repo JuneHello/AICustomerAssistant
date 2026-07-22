@@ -6,7 +6,9 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.middleware.exceptions import setup_exception_handlers
 from api.middleware.rate_limit import RateLimitMiddleware
+from api.middleware.request_id import RequestIDMiddleware
 from api.routes import admin, chat
 from core.dependencies import container
 
@@ -35,7 +37,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # 跨域设置
+    # 1. 注册中间件
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -43,11 +45,13 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # 挂载限流中间件
+    app.add_middleware(RequestIDMiddleware)
     app.add_middleware(RateLimitMiddleware)
 
-    # 挂载路由模块
+    # 2. 挂载全局异常拦截器
+    setup_exception_handlers(app)
+
+    # 3. 挂载路由模块
     app.include_router(chat.router, prefix="/api/v1/chat", tags=["聊天通道"])
     app.include_router(
         admin.router, prefix="/api/v1/admin", tags=["后台管理(审批/接管)"]

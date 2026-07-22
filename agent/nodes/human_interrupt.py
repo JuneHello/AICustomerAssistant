@@ -71,7 +71,14 @@ async def human_interrupt(state: AgentState) -> dict:
 
     # LangGraph interrupt() — 挂起状态机，等待人工审批
     # 审批结果将通过 Command(resume={"approved": True/False, ...}) 传回
-    approval_result = interrupt(approval_request)
+    raw_approval_result = interrupt(approval_request)
+
+    from domain.schemas.approval import ApprovalResumePayload
+    if isinstance(raw_approval_result, dict):
+        approval_payload = ApprovalResumePayload.model_validate(raw_approval_result)
+        approval_result = approval_payload.model_dump()
+    else:
+        approval_result = {"approved": False, "reason": "invalid_payload"}
 
     logger.info(
         "human_interrupt.approval_received",

@@ -9,6 +9,9 @@ from db.mysql import MySQLDatabase
 from db.postgres import PostgresDatabase
 from db.redis import RedisCache
 from db.session_manager import SessionManager
+from infrastructure.llm.provider import LiteLLMProvider
+from services.order_service import OrderService
+from services.refund_service import RefundService
 
 logger = structlog.get_logger()
 
@@ -16,20 +19,23 @@ logger = structlog.get_logger()
 class DIContainer:
     """系统全局依赖注入 (Dependency Injection) 容器。
 
-    管理 PostgreSQL, MySQL, Redis 连接池及 SessionManager 检查点的生命周期。
+    管理 PostgreSQL, MySQL, Redis 连接池、LiteLLMProvider 及核心业务领域服务。
     """
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._initialized = False
 
-        # ===== 核心数据库与缓存单例 =====
+        # ===== 1. 基础设施/服务实体 =====
         self.db_postgres = PostgresDatabase()
         self.db_mysql = MySQLDatabase()
         self.cache_redis = RedisCache()
-
-        # ===== 会话状态检查点管理器 =====
         self.session_manager = SessionManager()
+        self.llm_provider = LiteLLMProvider()
+
+        # ===== 2. 领域层服务 =====
+        self.order_service = OrderService(self.db_mysql)
+        self.refund_service = RefundService(self.db_postgres)
 
     async def initialize(self) -> None:
         """服务启动时触发组件的异步初始化与连接池预热。"""

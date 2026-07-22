@@ -52,24 +52,23 @@ async def entity_extractor(state: AgentState) -> dict:
 
     logger.info("entity_extractor.extracting", intent=intent, user_message=user_content[:100])
 
+    from core.dependencies import container
+
     try:
         user_prompt = (
             f"用户意图: {intent}\n"
             f"用户最新消息: {user_content}"
         )
-        response = await litellm.acompletion(
-            model=settings.PRIMARY_LLM,
+        extracted = await container.llm_provider.generate_json(
             messages=[
                 {"role": "system", "content": ENTITY_EXTRACTION_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.0,
-            max_tokens=256,
-            response_format={"type": "json_object"},
         )
 
-        result_text = response.choices[0].message.content.strip()
-        extracted = json.loads(result_text)
+        if not isinstance(extracted, dict):
+            extracted = {}
 
         # 过滤掉 null 字段并合并到当前实体字典中
         new_entities = {**entities}

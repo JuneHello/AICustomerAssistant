@@ -27,30 +27,9 @@ async def list_pending_refunds(
     context: UserContext = Depends(verify_jwt_token),
 ):
     """获取所有待人工审批的退款申请单"""
-    async with container.db_postgres.session() as session:
-        stmt = (
-            select(PendingRefund)
-            .where(
-                PendingRefund.tenant_id == context.tenant_id,
-                PendingRefund.status == RefundStatus.PENDING,
-            )
-            .limit(limit)
-            .offset(offset)
-        )
-        result = await session.execute(stmt)
-        refunds = result.scalars().all()
-
-        return [
-            {
-                "id": str(r.id),
-                "order_id": r.order_id,
-                "amount": float(r.amount),
-                "reason": r.reason,
-                "ai_checks": r.metadata_.get("ai_checks") if r.metadata_ else None,
-                "created_at": r.created_at.isoformat(),
-            }
-            for r in refunds
-        ]
+    return await container.refund_service.list_pending_refunds(
+        tenant_id=str(context.tenant_id), limit=limit, offset=offset
+    )
 
 
 @router.post("/approve/{refund_id}")
@@ -61,63 +40,35 @@ async def approve_refund(
     """人工审批通过退款单。通过 LangGraph resume() 恢复状态机运行。"""
     logger.info("admin.approve_refund", refund_id=refund_id, approver=context.user_id)
 
-    async with container.db_postgres.session() as session:
-        # 1. 查找并更新待审批单状态
-        stmt = select(PendingRefund).where(PendingRefund.id == refund_id)
-        result = await session.execute(stmt)
-        refund = result.scalar_one_or_none()
+    # 1. 调用 RefundService 更新审批单状态
+    refund = await container.refund_service.update_refund_status(
+        refund_id=refund_id, approver_id=context.user_id, approved=True
+    )
 
-        if not refund:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="退款审批单不存在"
-            )
+    # 2. 恢复挂起的 LangGraph 节点
+    from domain.schemas.approval import ApprovalResumePayload
+    resume_dto = ApprovalResumePayload(approved=True, approver_id=context.user_id)
+    config: RunnableConfig = {"configurable": {"thread_id": str(refund.session_id)}}
 
-        if refund.status != RefundStatus.PENDING:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"审批单已处理过，当前状态为: {refund.status}",
-            )
+    checkpointer = await container.session_manager.get_checkpointer()
+    graph = compile_agent_graph(checkpointer=checkpointer)
+    await graph.ainvoke(Command(resume=resume_dto.model_dump()), config=config)
 
-        refund.status = RefundStatus.APPROVED
-        refund.reviewed_by = context.user_id
-        await session.commit()
+    # 推送事件广播到 SSE 用户的连接中
+    redis_client = container.cache_redis.client
+    if redis_client:
+        await redis_client.publish(
+            f"session:{refund.session_id}",
+            json.dumps(
+                {
+                    "event": "approved",
+                    "data": f"退款单 {refund_id} 已由管理员审批通过",
+                },
+                ensure_ascii=False,
+            ),
+        )
 
-        # 2. 恢复挂起的 LangGraph 节点
-        # 使用 Command(resume=...) 发送通过信号给挂起的 human_interrupt 节点
-        config: RunnableConfig = {"configurable": {"thread_id": str(refund.session_id)}}
-        resume_payload = {
-            "approved": True,
-            "approver_id": context.user_id,
-        }
-
-        try:
-            # 触发 LangGraph 执行后续节点
-            checkpointer = await container.session_manager.get_checkpointer()
-            graph = compile_agent_graph(checkpointer=checkpointer)
-            await graph.ainvoke(Command(resume=resume_payload), config=config)
-
-            # 推送事件广播到 SSE 用户的连接中
-            redis_client = container.cache_redis.client
-            if redis_client:
-                await redis_client.publish(
-                    f"session:{refund.session_id}",
-                    json.dumps(
-                        {
-                            "event": "approved",
-                            "data": f"退款单 {refund_id} 已由管理员审批通过",
-                        },
-                        ensure_ascii=False,
-                    ),
-                )
-
-        except Exception as e:
-            logger.error("admin.resume_failed", error=str(e))
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"恢复状态机执行失败: {e}",
-            )
-
-        return {"status": "success", "message": "已审批通过，状态机已恢复执行"}
+    return {"status": "success", "message": "已审批通过，状态机已恢复执行"}
 
 
 @router.post("/reject/{refund_id}")
@@ -129,43 +80,35 @@ async def reject_refund(
     """人工审批拒绝退款单。通过 LangGraph resume() 返回拒绝结果。"""
     logger.info("admin.reject_refund", refund_id=refund_id, approver=context.user_id)
 
-    async with container.db_postgres.session() as session:
-        stmt = select(PendingRefund).where(PendingRefund.id == refund_id)
-        result = await session.execute(stmt)
-        refund = result.scalar_one_or_none()
+    # 1. 调用 RefundService 更新审批单状态
+    refund = await container.refund_service.update_refund_status(
+        refund_id=refund_id, approver_id=context.user_id, approved=False
+    )
 
-        if not refund:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="退款审批单不存在"
-            )
+    # 2. 恢复状态机，并告知拒绝原因
+    from domain.schemas.approval import ApprovalResumePayload
+    resume_dto = ApprovalResumePayload(approved=False, approver_id=context.user_id, reason=reason)
+    config: RunnableConfig = {"configurable": {"thread_id": str(refund.session_id)}}
 
-        refund.status = RefundStatus.REJECTED
-        refund.reviewed_by = context.user_id
-        await session.commit()
+    checkpointer = await container.session_manager.get_checkpointer()
+    graph = compile_agent_graph(checkpointer=checkpointer)
+    await graph.ainvoke(Command(resume=resume_dto.model_dump()), config=config)
 
-        # 恢复状态机，并告知拒绝原因
-        config: RunnableConfig = {"configurable": {"thread_id": str(refund.session_id)}}
-        resume_payload = {"approved": False, "reason": reason}
+    # 推送至用户长连接
+    redis_client = container.cache_redis.client
+    if redis_client:
+        await redis_client.publish(
+            f"session:{refund.session_id}",
+            json.dumps(
+                {
+                    "event": "rejected",
+                    "data": f"退款申请已退回。原因: {reason}",
+                },
+                ensure_ascii=False,
+            ),
+        )
 
-        checkpointer = await container.session_manager.get_checkpointer()
-        graph = compile_agent_graph(checkpointer=checkpointer)
-        await graph.ainvoke(Command(resume=resume_payload), config=config)
-
-        # 推送至用户长连接
-        redis_client = container.cache_redis.client
-        if redis_client:
-            await redis_client.publish(
-                f"session:{refund.session_id}",
-                json.dumps(
-                    {
-                        "event": "rejected",
-                        "data": f"退款申请已退回。原因: {reason}",
-                    },
-                    ensure_ascii=False,
-                ),
-            )
-
-        return {"status": "success", "message": "退款申请已拒绝"}
+    return {"status": "success", "message": "退款申请已拒绝"}
 
 
 @router.post("/takeover/{session_id}")

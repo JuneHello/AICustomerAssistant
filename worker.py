@@ -42,12 +42,13 @@ def compress_context(session_id: str, messages_json: list):
         )
 
         try:
-            response = await litellm.acompletion(
-                model=settings.SMALL_LLM,  # 使用轻量模型做背景压缩，节约成本
+            from core.dependencies import container
+
+            summary = await container.llm_provider.generate(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
+                use_small_model=True,
             )
-            summary = response.choices[0].message.content.strip()
             logger.info(
                 "worker.compress_context.success",
                 session_id=session_id,
