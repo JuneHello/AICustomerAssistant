@@ -55,12 +55,13 @@ def compress_context(session_id: str, messages_json: list):
             )
 
             # 更新 Redis 缓存或数据库会话状态
-            from db.connections import get_redis_client
+            from core.dependencies import container
 
-            redis = await get_redis_client()
-            await redis.setex(
-                f"session_summary:{session_id}", 86400, summary
-            )
+            redis = container.cache_redis.client
+            if redis:
+                await redis.setex(
+                    f"session_summary:{session_id}", 86400, summary
+                )
 
         except Exception as e:
             logger.error(

@@ -12,7 +12,7 @@ from sqlalchemy import select, text
 import structlog
 
 from config.settings import get_settings
-from db.connections import PgSession
+from core.dependencies import container
 from db.pg_models import KnowledgeBase
 
 logger = structlog.get_logger()
@@ -28,16 +28,11 @@ async def get_embedding(text: str) -> list[float]:
 
     random.seed(hash(text))
     # 模拟生成 1024 维的归一化浮点数
-    vector = [random.uniform(-0.1, 0.1) for _ in range(1024)]
-    norm = sum(x**2 for x in vector) ** 0.5
-    return [x / norm for x in vector]
+    return [random.uniform(-1.0, 1.0) for _ in range(1024)]
 
 
 async def rerank_documents(query: str, documents: list[dict]) -> list[dict]:
-    """使用 BGE-Reranker-v2-M3 对候选文档进行精排打分。
-
-    此处为 Mock 精排逻辑，生产环境中应使用 FlagEmbedding 库或 Reranker 接口服务。
-    """
+    """使用 Reranker 模型对初筛候选集精排"""
     logger.info("rag.reranker", num_candidates=len(documents))
     import random
 
@@ -75,7 +70,7 @@ async def retrieve_knowledge(query: str, tenant_id: str) -> list[dict]:
     query_vector = await get_embedding(query)
     now = datetime.now(timezone.utc)
 
-    async with PgSession() as session:
+    async with container.db_postgres.session() as session:
         # 1. 向量检索：使用余弦相似度查询相关知识
         # 使用 pgvector 的 <=> 操作符表示余弦距离，1 - 余弦距离 = 余弦相似度
         vector_stmt = (

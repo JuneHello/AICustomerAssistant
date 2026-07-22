@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = Field(default="postgres")
     POSTGRES_PASSWORD: SecretStr = Field(default=SecretStr("postgres"))
     POSTGRES_DB: str = Field(default="ai_assistant")
+    PG_POOL_SIZE: int = Field(default=20, ge=1, description="Postgres connection pool size")
+    PG_MAX_OVERFLOW: int = Field(default=10, ge=0, description="Postgres connection pool max overflow")
+    MYSQL_POOL_SIZE: int = Field(default=10, ge=1, description="MySQL connection pool size")
+    MYSQL_MAX_OVERFLOW: int = Field(default=5, ge=0, description="MySQL connection pool max overflow")
+    SQL_ECHO: bool = Field(default=False, description="SQL echo debug setting")
 
     # ── Redis ─────────────────────────────────────────────────────────
     REDIS_URL: str = Field(

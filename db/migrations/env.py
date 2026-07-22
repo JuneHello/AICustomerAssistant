@@ -2,7 +2,7 @@
 Alembic async migration environment for PostgreSQL.
 
 This env.py is configured to:
-  - Use the async PostgreSQL engine from db.connections
+  - Use the async PostgreSQL engine configured in settings
   - Auto-detect model changes from db.pg_models.PgBase.metadata
   - Run migrations inside an async context
 """

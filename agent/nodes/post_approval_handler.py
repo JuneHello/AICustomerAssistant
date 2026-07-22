@@ -115,6 +115,32 @@ async def post_approval_handler(state: AgentState) -> dict:
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
 
+        # 持久化 Saga 事务日志到 PostgreSQL saga_logs 表
+        from core.dependencies import container
+        from db.pg_models import SagaLog, SagaStepStatus
+
+        try:
+            async with container.db_postgres.session() as session:
+                async with session.begin():
+                    raw_tenant = pending.get("tenant_id") or state.get("tenant_id") or "00000000-0000-0000-0000-000000000001"
+                    try:
+                        tenant_uuid = uuid.UUID(str(raw_tenant))
+                    except ValueError:
+                        tenant_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(raw_tenant))
+
+                    for idx, step in enumerate(saga_steps, start=1):
+                        log_entry = SagaLog(
+                            saga_id=tx_id,
+                            tenant_id=tenant_uuid,
+                            step_name=step["step_name"],
+                            step_order=idx,
+                            status=SagaStepStatus.SUCCEEDED if step["status"] == "completed" else SagaStepStatus.STARTED,
+                            input_data=step.get("payload"),
+                        )
+                        session.add(log_entry)
+        except Exception as db_err:
+            logger.warning("post_approval_handler.saga_log_write_warning", error=str(db_err))
+
         logger.info(
             "post_approval_handler.saga_completed",
             tx_id=str(tx_id),

@@ -5,7 +5,7 @@ from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 import structlog
 
-from db.connections import get_redis_client
+from core.dependencies import container
 
 logger = structlog.get_logger()
 
@@ -27,10 +27,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         rate_limit_key = f"ratelimit:{tenant_id}:{client_ip}"
 
         try:
-            redis_client = await get_redis_client()
-            allowed = await self._check_token_bucket(
-                redis_client, rate_limit_key, capacity=60, rate=2.0
-            )
+            redis_client = container.cache_redis.client
+            if redis_client:
+                allowed = await self._check_token_bucket(
+                    redis_client, rate_limit_key, capacity=60, rate=2.0
+                )
 
             if not allowed:
                 logger.warning("rate_limiter.blocked", key=rate_limit_key)

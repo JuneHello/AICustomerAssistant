@@ -28,8 +28,21 @@ async def human_interrupt(state: AgentState) -> dict:
     session_id = state.get("session_id", "")
     tenant_id = state.get("tenant_id", "")
 
-    # 构建审批单
-    refund_id = f"RF-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    # 优先从工具输出或 entities 提取数据库中真实的退款单 ID (UUID)
+    refund_id = None
+    tool_outputs = state.get("tool_outputs", [])
+    for output in reversed(tool_outputs):
+        if isinstance(output, dict) and output.get("refund_id"):
+            refund_id = str(output["refund_id"])
+            break
+
+    if not refund_id:
+        refund_id = str(
+            entities.get("refund_id")
+            or entities.get("db_refund_id")
+            or f"RF-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+        )
+
     idempotency_key = f"idem-{session_id}-{uuid.uuid4().hex[:8]}"
 
     approval_request = {

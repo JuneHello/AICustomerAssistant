@@ -26,10 +26,12 @@ def load_dataset() -> list:
 
 async def run_agent_case(case: dict):
     """运行单个评测用例的异步函数"""
-    from agent.graph import agent_graph
+    from agent.graph import compile_agent_graph
+    from core.dependencies import container
     from langchain_core.messages import HumanMessage
     import uuid
 
+    await container.initialize()
     session_id = f"eval-{case['case_id']}-{uuid.uuid4().hex[:6]}"
     
     # 构造初始状态
@@ -53,7 +55,9 @@ async def run_agent_case(case: dict):
     
     try:
         # 调用状态机运行
-        final_state = await agent_graph.ainvoke(initial_state, config=config)
+        checkpointer = await container.session_manager.get_checkpointer()
+        graph = compile_agent_graph(checkpointer=checkpointer)
+        final_state = await graph.ainvoke(initial_state, config=config)
         
         logger.info(
             "eval.case.finished",
@@ -74,8 +78,7 @@ async def run_agent_case(case: dict):
         if "SF1049284201" in case["query"]:
             assert entities.get("tracking_number") == "SF1049284201", f"用例 {case['case_id']} 运单号抽取失败"
     finally:
-        from db.connections import dispose_engines
-        await dispose_engines()
+        await container.close()
 
 
 @pytest.mark.parametrize("case", load_dataset())

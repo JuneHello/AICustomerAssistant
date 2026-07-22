@@ -21,12 +21,12 @@ async def query_order(
         包含订单状态、金额、时间等信息的字典
     """
     from sqlalchemy import select
-    from db.connections import MysqlSession
+    from core.dependencies import container
     from db.mysql_models import Order
 
     logger.info("tool.query_order", order_id=order_id, user_id=user_id)
 
-    async with MysqlSession() as session:
+    async with container.db_mysql.session() as session:
         if order_id:
             stmt = select(Order).where(Order.order_no == order_id)
         elif user_id:

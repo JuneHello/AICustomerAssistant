@@ -17,7 +17,7 @@ async def query_logistics(order_id: str, **kwargs) -> dict:
         包含物流状态、运单号、预计送达时间的字典
     """
     from sqlalchemy import select
-    from db.connections import MysqlSession
+    from core.dependencies import container
     from db.mysql_models import Order
 
     logger.info("tool.query_logistics", order_id=order_id)
@@ -25,7 +25,7 @@ async def query_logistics(order_id: str, **kwargs) -> dict:
     if not order_id:
         return {"status": "error", "message": "请提供订单号"}
 
-    async with MysqlSession() as session:
+    async with container.db_mysql.session() as session:
         stmt = select(Order).where(Order.order_no == order_id)
         result = await session.execute(stmt)
         order = result.scalar_one_or_none()

@@ -4,10 +4,9 @@
 """
 
 import uuid
-from datetime import datetime, timezone
 
-from langchain_core.tools import tool
 import structlog
+from langchain_core.tools import tool
 
 logger = structlog.get_logger()
 
@@ -30,7 +29,8 @@ async def submit_refund(
         包含审批单ID和状态的字典
     """
     from sqlalchemy import select
-    from db.connections import PgSession
+
+    from core.dependencies import container
     from db.pg_models import PendingRefund
 
     logger.info(
@@ -48,9 +48,8 @@ async def submit_refund(
 
     # 生成幂等键
     idempotency_key = f"refund-{order_id}-{uuid.uuid4().hex[:8]}"
-    refund_id = f"RF-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
 
-    async with PgSession() as session:
+    async with container.db_postgres.session() as session:
         async with session.begin():
             # 检查是否已有相同订单的待处理退款
             existing = await session.execute(
@@ -66,8 +65,7 @@ async def submit_refund(
                 }
 
             # 安全解析 UUID（支持将任意非 UUID 字符串转换为确定性的 UUID v5）
-            import uuid
-            
+
             raw_tenant = kwargs.get("tenant_id")
             if not raw_tenant:
                 raw_tenant = "00000000-0000-0000-0000-000000000001"
@@ -75,7 +73,7 @@ async def submit_refund(
                 tenant_uuid = uuid.UUID(str(raw_tenant))
             except ValueError:
                 tenant_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(raw_tenant))
-                
+
             raw_session = kwargs.get("session_id")
             session_uuid = None
             if raw_session:
@@ -98,20 +96,22 @@ async def submit_refund(
                         "order_verified": True,
                         "eligibility_checked": True,
                         "risk_level": "normal" if amount <= 500 else "high",
-                    }
-                }
+                    },
+                },
             )
             session.add(refund)
+            await session.flush()
+            db_refund_id = str(refund.id)
 
     logger.info(
         "tool.submit_refund.created",
-        refund_id=refund_id,
         idempotency_key=idempotency_key,
     )
 
     return {
         "status": "success",
-        "refund_id": refund_id,
+        "refund_id": db_refund_id,
+        "db_refund_id": db_refund_id,
         "order_id": order_id,
         "amount": amount,
         "message": "退款申请已提交，等待人工审批",

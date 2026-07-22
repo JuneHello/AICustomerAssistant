@@ -3,7 +3,7 @@
 import json
 import structlog
 
-from db.connections import get_redis_client
+from core.dependencies import container
 
 logger = structlog.get_logger()
 
@@ -23,7 +23,9 @@ class EscalationEngine:
             "payload": payload
         }
         
-        redis_client = await get_redis_client()
+        redis_client = container.cache_redis.client
+        if not redis_client:
+            raise RuntimeError("Redis 客户端未初始化")
         
         # 1. 写入会话挂起队列
         await redis_client.hset(f"escalated_sessions:{tenant_id}", session_id, json.dumps(event_data, ensure_ascii=False))  # type: ignore[misc]

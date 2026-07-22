@@ -61,17 +61,18 @@ async def escalation_handler(state: AgentState) -> dict:
 
     # 通过 Redis Pub/Sub 发布转接事件
     try:
-        from db.connections import get_redis_client
+        from core.dependencies import container
 
-        redis_client = await get_redis_client()
-        await redis_client.publish(
-            f"escalation:{tenant_id}",
-            json.dumps(handoff_payload, ensure_ascii=False),
-        )
-        logger.info(
-            "escalation_handler.published",
-            channel=f"escalation:{tenant_id}",
-        )
+        redis_client = container.cache_redis.client
+        if redis_client:
+            await redis_client.publish(
+                f"escalation:{tenant_id}",
+                json.dumps(handoff_payload, ensure_ascii=False),
+            )
+            logger.info(
+                "escalation_handler.published",
+                channel=f"escalation:{tenant_id}",
+            )
     except Exception as e:
         logger.error("escalation_handler.publish_failed", error=str(e))
 

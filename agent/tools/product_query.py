@@ -22,12 +22,12 @@ async def query_product(
         包含商品名称、价格、库存等信息的字典
     """
     from sqlalchemy import select
-    from db.connections import MysqlSession
+    from core.dependencies import container
     from db.mysql_models import Product
 
     logger.info("tool.query_product", product_id=product_id, keyword=keyword)
 
-    async with MysqlSession() as session:
+    async with container.db_mysql.session() as session:
         if product_id:
             stmt = select(Product).where(Product.id == int(product_id) if isinstance(product_id, str) and product_id.isdigit() else Product.id == product_id)
         elif keyword:

@@ -5,12 +5,13 @@ from sqlalchemy import select
 def test_tool_debug():
     """单元测试内的调试函数，运行数据库查询并输出现有租户和会话 ID 详情。"""
     async def run_debug():
-        from db.connections import PgSession
+        from core.dependencies import container
         from db.pg_models import Tenant, Session
         try:
+            await container.initialize()
             print("\n" + "="*40)
             print("[DEBUG] Querying tenants and sessions from Pg...")
-            async with PgSession() as session:
+            async with container.db_postgres.session() as session:
                 try:
                     # 查询 tenants
                     stmt_t = select(Tenant)
@@ -33,7 +34,6 @@ def test_tool_debug():
                     raise e
             print("="*40)
         finally:
-            from db.connections import dispose_engines
-            await dispose_engines()
+            await container.close()
 
     asyncio.run(run_debug())

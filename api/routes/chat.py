@@ -11,9 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from langchain_core.messages import HumanMessage
 from sse_starlette.sse import EventSourceResponse
 
-from agent.graph import agent_graph
+from agent.graph import compile_agent_graph
 from api.middleware.auth import UserContext, verify_jwt_token
-from db.connections import get_redis_client
+from core.dependencies import container
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -52,17 +52,20 @@ async def send_message(
     config: RunnableConfig = {"configurable": {"thread_id": session_id}}
 
     try:
-        final_state = await agent_graph.ainvoke(initial_state, config=config)
+        checkpointer = await container.session_manager.get_checkpointer()
+        graph = compile_agent_graph(checkpointer=checkpointer)
+        final_state = await graph.ainvoke(initial_state, config=config)
 
         # 3. 提取最后一条 AI 回复并推送给 Redis Pub/Sub (广播到流通道)
         last_msg = final_state["messages"][-1]
         reply_text = last_msg.content
 
-        redis_client = await get_redis_client()
-        await redis_client.publish(
-            f"session:{session_id}",
-            json.dumps({"event": "message", "data": reply_text}, ensure_ascii=False),
-        )
+        redis_client = container.cache_redis.client
+        if redis_client:
+            await redis_client.publish(
+                f"session:{session_id}",
+                json.dumps({"event": "message", "data": reply_text}, ensure_ascii=False),
+            )
 
         return {"status": "success", "reply": reply_text}
 
@@ -89,7 +92,9 @@ async def chat_stream(
     logger.info("chat.stream_connected", session_id=session_id)
 
     async def event_generator():
-        redis_client = await get_redis_client()
+        redis_client = container.cache_redis.client
+        if not redis_client:
+            raise RuntimeError("Redis 客户端未初始化")
         pubsub = redis_client.pubsub()
         await pubsub.subscribe(f"session:{session_id}")
 

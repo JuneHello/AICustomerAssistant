@@ -10,19 +10,19 @@
 """
 
 import structlog
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 
-from agent.state import AgentState
 from agent.guardrails.input_guard import input_guardrails
 from agent.guardrails.output_guard import output_guardrails
-from agent.nodes.intent_router import intent_router
-from agent.nodes.rag_retriever import rag_retriever
-from agent.nodes.tool_executor import tool_executor
-from agent.nodes.response_synthesizer import response_synthesizer
-from agent.nodes.human_interrupt import human_interrupt
-from agent.nodes.post_approval_handler import post_approval_handler
-from agent.nodes.escalation_handler import escalation_handler
 from agent.nodes.entity_extractor import entity_extractor
+from agent.nodes.escalation_handler import escalation_handler
+from agent.nodes.human_interrupt import human_interrupt
+from agent.nodes.intent_router import intent_router
+from agent.nodes.post_approval_handler import post_approval_handler
+from agent.nodes.rag_retriever import rag_retriever
+from agent.nodes.response_synthesizer import response_synthesizer
+from agent.nodes.tool_executor import tool_executor
+from agent.state import AgentState
 
 logger = structlog.get_logger()
 
@@ -182,5 +182,7 @@ def build_graph() -> StateGraph:
     return graph
 
 
-# 编译图实例（全局复用）
-agent_graph = build_graph().compile()
+def compile_agent_graph(checkpointer=None):
+    """根据传入的 checkpointer 编译 Agent 状态机图。"""
+    return build_graph().compile(checkpointer=checkpointer)
+
