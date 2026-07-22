@@ -9,8 +9,6 @@ import litellm
 import structlog
 
 from config.settings import get_settings
-from db.connections import PgSession
-from db.pg_models import PendingRefund
 
 logger = structlog.get_logger()
 settings = get_settings()

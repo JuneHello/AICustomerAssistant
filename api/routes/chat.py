@@ -5,15 +5,15 @@
 
 import asyncio
 import json
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from langchain_core.messages import HumanMessage
 from sse_starlette.sse import EventSourceResponse
-import structlog
 
 from agent.graph import agent_graph
-from api.middleware.auth import verify_jwt_token, UserContext
-from db.connections import get_redis_client, PgSession
-from db.pg_models import Message
+from api.middleware.auth import UserContext, verify_jwt_token
+from db.connections import get_redis_client
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -30,6 +30,7 @@ async def send_message(
 
     # 1. 组装输入状态
     from agent.state import AgentState
+
     initial_state: AgentState = {
         "messages": [HumanMessage(content=content)],
         "session_id": session_id,
@@ -47,6 +48,7 @@ async def send_message(
     # 2. 运行状态机
     # thread_id 用于持久化 state checkpoint
     from langchain_core.runnables import RunnableConfig
+
     config: RunnableConfig = {"configurable": {"thread_id": session_id}}
 
     try:
@@ -100,7 +102,9 @@ async def chat_stream(
 
             while True:
                 # 定期无阻塞拉取消息
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=1.0
+                )
                 if message and message["type"] == "message":
                     payload = json.loads(message["data"].decode("utf-8"))
                     yield {

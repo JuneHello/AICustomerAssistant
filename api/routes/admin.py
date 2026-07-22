@@ -5,7 +5,7 @@
 
 import json
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 import structlog
 from langgraph.types import Command
 from langchain_core.runnables import RunnableConfig

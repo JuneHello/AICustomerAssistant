@@ -4,17 +4,16 @@ Agent 运行时状态由 langgraph-checkpoint-postgres 自动持久化到 Postgr
 通过 thread_id 关联到 sessions 表，无需手动序列化。
 """
 
-from typing import TypedDict, Annotated
+from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 
 class AgentState(TypedDict):
-    """Agent 运行时状态 Schema。
-
+    """
     优化点：
-    - 使用明确的 BaseMessage 强类型约束，提升 IDE 补全与运行期安全。
+    - 使用明确的 BaseMessage 强类型约束。
     - entities 和 pending_approval 的内部结构必须采用 JSON 可序列化的
       Python 基础类型 (str, int, float, bool, None, list, dict)，
       避免 langgraph-checkpoint-postgres 在序列化时抛出 TypeError 异常。
@@ -50,4 +49,3 @@ class AgentState(TypedDict):
 
     # 最近工具执行明细结果（供 LLM 回复生成使用）
     tool_outputs: list[dict]
-

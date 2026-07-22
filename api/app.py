@@ -1,12 +1,13 @@
 """FastAPI 应用工厂 (app.py)"""
 
 from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import structlog
 
-from api.routes import chat, admin
 from api.middleware.rate_limit import RateLimitMiddleware
+from api.routes import admin, chat
 from db.connections import mysql_engine, pg_engine
 
 logger = structlog.get_logger()
@@ -31,7 +32,7 @@ def create_app() -> FastAPI:
     """初始化配置与应用挂载"""
     app = FastAPI(
         title="商城智能客服 Agent API",
-        description="基于 LangGraph + DeepSeek 的双库智能客服大脑",
+        description="智能客服大脑",
         version="1.0.0",
         lifespan=lifespan,
     )

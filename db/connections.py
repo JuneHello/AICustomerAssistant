@@ -4,14 +4,9 @@ Dual async database engines: PostgreSQL (read/write) and MySQL (read-only).
 Provides:
     - pg_engine / pg_session_factory  — PostgreSQL async engine & session
     - mysql_engine / mysql_session_factory — MySQL async engine & session
-    - get_pg_session() — async generator for dependency injection
-    - get_mysql_session() — async generator for dependency injection
 """
 
 from __future__ import annotations
-
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -73,34 +68,6 @@ mysql_session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
 
 MysqlSession = mysql_session_factory
 
-
-# ═══════════════════════════════════════════════════════════════════════
-# Dependency-injection helpers (for FastAPI Depends)
-# ═══════════════════════════════════════════════════════════════════════
-async def get_pg_session() -> AsyncGenerator[AsyncSession, None]:
-    """Yield a PostgreSQL async session, auto-closing on exit."""
-    async with pg_session_factory() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
-
-
-async def get_mysql_session() -> AsyncGenerator[AsyncSession, None]:
-    """Yield a MySQL async session (read-only), auto-closing on exit."""
-    async with mysql_session_factory() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
-
-
-@asynccontextmanager
-async def pg_transaction() -> AsyncGenerator[AsyncSession, None]:
-    """Context manager that commits on success and rolls back on error."""
-    async with pg_session_factory() as session:
-        async with session.begin():
-            yield session
 
 
 # Redis client setup
