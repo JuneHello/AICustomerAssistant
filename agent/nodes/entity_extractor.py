@@ -10,6 +10,7 @@ import structlog
 
 from agent.state import AgentState
 from config.settings import get_settings
+from core.dependencies import container
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -52,7 +53,6 @@ async def entity_extractor(state: AgentState) -> dict:
 
     logger.info("entity_extractor.extracting", intent=intent, user_message=user_content[:100])
 
-    from core.dependencies import container
 
     try:
         user_prompt = (

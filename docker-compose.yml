@@ -83,7 +83,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ai-assistant-celery
-    command: celery -A workers.celery_app worker --loglevel=info --concurrency=4
+    command: celery -A worker.celery_app worker --loglevel=info --concurrency=4
     env_file:
       - .env
     depends_on:

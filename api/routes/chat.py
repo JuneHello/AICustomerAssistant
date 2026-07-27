@@ -9,9 +9,11 @@ import json
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from agent.graph import compile_agent_graph
+from agent.state import AgentState
 from api.middleware.auth import UserContext, verify_jwt_token
 from core.dependencies import container
 
@@ -19,21 +21,34 @@ router = APIRouter()
 logger = structlog.get_logger()
 
 
+class SendMessageRequest(BaseModel):
+    """发送消息请求体"""
+    content: str
+    session_id: str
+
+
 @router.post("/send")
 async def send_message(
-    content: str,
-    session_id: str,
+    body: SendMessageRequest,
     context: UserContext = Depends(verify_jwt_token),
 ):
     """同步发送消息接口。主要用于非流式测试或意图激活。"""
-    logger.info("chat.send", session_id=session_id, user_id=context.user_id)
+    logger.info("chat.send", session_id=body.session_id, user_id=context.user_id)
+
+    # 0. 检查该会话是否已被人工接管
+    redis_client = container.cache_redis.client
+    if redis_client:
+        takeover_flag = await redis_client.get(f"takeover:{body.session_id}")
+        if takeover_flag:
+            return {
+                "status": "takeover",
+                "reply": "当前会话已由人工客服接管，请在人工客服窗口继续沟通。",
+            }
 
     # 1. 组装输入状态
-    from agent.state import AgentState
-
     initial_state: AgentState = {
-        "messages": [HumanMessage(content=content)],
-        "session_id": session_id,
+        "messages": [HumanMessage(content=body.content)],
+        "session_id": body.session_id,
         "tenant_id": context.tenant_id,
         "user_id": context.user_id,
         "intent": None,
@@ -47,23 +62,21 @@ async def send_message(
 
     # 2. 运行状态机
     # thread_id 用于持久化 state checkpoint
-    from langchain_core.runnables import RunnableConfig
-
-    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": body.session_id}}
 
     try:
-        checkpointer = await container.session_manager.get_checkpointer()
-        graph = compile_agent_graph(checkpointer=checkpointer)
+        graph = container.agent_graph
+        if graph is None:
+            raise RuntimeError("Agent 图尚未初始化，请检查应用启动流程")
         final_state = await graph.ainvoke(initial_state, config=config)
 
         # 3. 提取最后一条 AI 回复并推送给 Redis Pub/Sub (广播到流通道)
         last_msg = final_state["messages"][-1]
         reply_text = last_msg.content
 
-        redis_client = container.cache_redis.client
         if redis_client:
             await redis_client.publish(
-                f"session:{session_id}",
+                f"session:{body.session_id}",
                 json.dumps({"event": "message", "data": reply_text}, ensure_ascii=False),
             )
 
@@ -73,7 +86,7 @@ async def send_message(
         logger.error("chat.send_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Agent runtime error: {e}",
+            detail="Agent 处理异常，请稍后重试",
         )
 
 
@@ -111,7 +124,7 @@ async def chat_stream(
                     ignore_subscribe_messages=True, timeout=1.0
                 )
                 if message and message["type"] == "message":
-                    payload = json.loads(message["data"].decode("utf-8"))
+                    payload = json.loads(message["data"])
                     yield {
                         "event": payload.get("event", "message"),
                         "data": payload.get("data", ""),

@@ -9,12 +9,10 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
-from sqlalchemy import select
 
-from agent.graph import compile_agent_graph
-from api.middleware.auth import UserContext, verify_jwt_token
+from api.middleware.auth import UserContext, require_admin
 from core.dependencies import container
-from db.pg_models import PendingRefund, RefundStatus
+from domain.schemas.approval import ApprovalResumePayload
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -24,7 +22,7 @@ logger = structlog.get_logger()
 async def list_pending_refunds(
     limit: int = 10,
     offset: int = 0,
-    context: UserContext = Depends(verify_jwt_token),
+    context: UserContext = Depends(require_admin),
 ):
     """获取所有待人工审批的退款申请单"""
     return await container.refund_service.list_pending_refunds(
@@ -35,7 +33,7 @@ async def list_pending_refunds(
 @router.post("/approve/{refund_id}")
 async def approve_refund(
     refund_id: str,
-    context: UserContext = Depends(verify_jwt_token),
+    context: UserContext = Depends(require_admin),
 ):
     """人工审批通过退款单。通过 LangGraph resume() 恢复状态机运行。"""
     logger.info("admin.approve_refund", refund_id=refund_id, approver=context.user_id)
@@ -46,12 +44,10 @@ async def approve_refund(
     )
 
     # 2. 恢复挂起的 LangGraph 节点
-    from domain.schemas.approval import ApprovalResumePayload
     resume_dto = ApprovalResumePayload(approved=True, approver_id=context.user_id)
     config: RunnableConfig = {"configurable": {"thread_id": str(refund.session_id)}}
 
-    checkpointer = await container.session_manager.get_checkpointer()
-    graph = compile_agent_graph(checkpointer=checkpointer)
+    graph = container.agent_graph
     await graph.ainvoke(Command(resume=resume_dto.model_dump()), config=config)
 
     # 推送事件广播到 SSE 用户的连接中
@@ -75,7 +71,7 @@ async def approve_refund(
 async def reject_refund(
     refund_id: str,
     reason: str = "拒绝退款",
-    context: UserContext = Depends(verify_jwt_token),
+    context: UserContext = Depends(require_admin),
 ):
     """人工审批拒绝退款单。通过 LangGraph resume() 返回拒绝结果。"""
     logger.info("admin.reject_refund", refund_id=refund_id, approver=context.user_id)
@@ -86,12 +82,10 @@ async def reject_refund(
     )
 
     # 2. 恢复状态机，并告知拒绝原因
-    from domain.schemas.approval import ApprovalResumePayload
     resume_dto = ApprovalResumePayload(approved=False, approver_id=context.user_id, reason=reason)
     config: RunnableConfig = {"configurable": {"thread_id": str(refund.session_id)}}
 
-    checkpointer = await container.session_manager.get_checkpointer()
-    graph = compile_agent_graph(checkpointer=checkpointer)
+    graph = container.agent_graph
     await graph.ainvoke(Command(resume=resume_dto.model_dump()), config=config)
 
     # 推送至用户长连接
@@ -114,7 +108,7 @@ async def reject_refund(
 @router.post("/takeover/{session_id}")
 async def takeover_session(
     session_id: str,
-    context: UserContext = Depends(verify_jwt_token),
+    context: UserContext = Depends(require_admin),
 ):
     """人工接管会话。AI 停止服务，后续消息流切换回人工客服。"""
     logger.info("admin.takeover", session_id=session_id, agent_user=context.user_id)

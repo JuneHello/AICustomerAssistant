@@ -82,7 +82,7 @@ def _route_after_approval(state: AgentState) -> str:
 def build_graph() -> StateGraph:
     """构建 Agent 状态机图。"""
 
-    graph = StateGraph(AgentState)
+    graph = StateGraph(AgentState)  # type: ignore[bad-specialization]
 
     # ── 注册节点 ──────────────────────────────────────────────
     graph.add_node("input_guardrails", input_guardrails)

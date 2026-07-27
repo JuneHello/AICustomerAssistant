@@ -57,6 +57,11 @@ def create_app() -> FastAPI:
         admin.router, prefix="/api/v1/admin", tags=["后台管理(审批/接管)"]
     )
 
+    # 4. 健康检查端点（供 Docker HEALTHCHECK / K8s Liveness Probe 使用）
+    @app.get("/health", tags=["系统"])
+    async def healthcheck():
+        return {"status": "ok"}
+
     return app
 
 

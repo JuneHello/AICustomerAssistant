@@ -1,7 +1,7 @@
 """JWT 身份验证中间件 — 提供租户与用户身份校验"""
 
 from datetime import datetime, timezone
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 import jwt
 import structlog
 
@@ -14,9 +14,10 @@ settings = get_settings()
 class UserContext:
     """认证通过的用户上下文信息"""
 
-    def __init__(self, user_id: str, tenant_id: str):
+    def __init__(self, user_id: str, tenant_id: str, is_admin: bool = False):
         self.user_id = user_id
         self.tenant_id = tenant_id
+        self.is_admin = is_admin
 
 
 async def verify_jwt_token(
@@ -29,7 +30,7 @@ async def verify_jwt_token(
     """
     # 允许开发环境下使用 Mock 头
     if settings.APP_ENV == "development" and authorization == "mock_admin_token":
-        return UserContext(user_id="admin_user_001", tenant_id="t-001")
+        return UserContext(user_id="admin_user_001", tenant_id="t-001", is_admin=True)
 
     if not authorization:
         raise HTTPException(
@@ -52,26 +53,14 @@ async def verify_jwt_token(
             token,
             settings.JWT_SECRET_KEY.get_secret_value(),
             algorithms=[settings.JWT_ALGORITHM],
+            options={"require": ["exp", "sub", "tenant_id"]},
         )
 
         user_id = payload.get("sub")
         tenant_id = payload.get("tenant_id")
-        exp = payload.get("exp")
+        is_admin = payload.get("role") == "admin"
 
-        if not user_id or not tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload",
-            )
-
-        # 检查是否过期
-        if exp and datetime.now(timezone.utc).timestamp() > exp:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has expired",
-            )
-
-        return UserContext(user_id=user_id, tenant_id=tenant_id)
+        return UserContext(user_id=user_id, tenant_id=tenant_id, is_admin=is_admin)
 
     except jwt.PyJWTError as e:
         logger.warning("auth.invalid_token", error=str(e))
@@ -79,3 +68,15 @@ async def verify_jwt_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {e}",
         )
+
+
+async def require_admin(
+    context: UserContext = Depends(verify_jwt_token),
+) -> UserContext:
+    """FastAPI 依赖项：要求当前用户具有管理员权限。"""
+    if not context.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="此操作需要管理员权限",
+        )
+    return context

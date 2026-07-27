@@ -51,7 +51,3 @@ class SessionManager:
                 logger.warning("session_manager.close_error", error=str(e))
             self._context_manager = None
             self.checkpointer = None
-
-
-# 全局单例管理器
-session_manager = SessionManager()

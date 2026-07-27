@@ -5,6 +5,8 @@
 """
 
 import os
+from functools import lru_cache
+
 import structlog
 
 logger = structlog.get_logger()
@@ -13,10 +15,6 @@ logger = structlog.get_logger()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SOUL_PATH = os.path.join(BASE_DIR, "SOUL.md")
 AGENTS_PATH = os.path.join(BASE_DIR, "AGENTS.md")
-
-# 缓存加载过的 Markdown 文件，提升高并发性能
-_soul_cache = None
-_agents_cache = None
 
 
 def load_markdown_file(file_path: str) -> str:
@@ -32,20 +30,16 @@ def load_markdown_file(file_path: str) -> str:
         return ""
 
 
+@lru_cache(maxsize=1)
 def get_soul() -> str:
     """获取并缓存 SOUL.md 人格设定。"""
-    global _soul_cache
-    if _soul_cache is None:
-        _soul_cache = load_markdown_file(SOUL_PATH)
-    return _soul_cache
+    return load_markdown_file(SOUL_PATH)
 
 
+@lru_cache(maxsize=1)
 def get_agents_sop() -> str:
     """获取并缓存 AGENTS.md 业务规则。"""
-    global _agents_cache
-    if _agents_cache is None:
-        _agents_cache = load_markdown_file(AGENTS_PATH)
-    return _agents_cache
+    return load_markdown_file(AGENTS_PATH)
 
 
 def extract_specific_sop(agents_content: str, intent: str) -> str:

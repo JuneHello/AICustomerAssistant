@@ -28,6 +28,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         try:
             redis_client = container.cache_redis.client
+            allowed = True
             if redis_client:
                 allowed = await self._check_token_bucket(
                     redis_client, rate_limit_key, capacity=60, rate=2.0

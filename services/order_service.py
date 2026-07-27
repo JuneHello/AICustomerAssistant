@@ -104,7 +104,7 @@ class OrderService:
                     "status": "success",
                     "order": {
                         "order_id": o.order_no,
-                        "status": o.status,
+                        "status": o.status.value if hasattr(o.status, 'value') else o.status,
                         "total_amount": float(o.total_amount),
                         "created_at": o.created_at.isoformat() if o.created_at else None,
                     },
@@ -115,7 +115,7 @@ class OrderService:
                 "orders": [
                     {
                         "order_id": o.order_no,
-                        "status": o.status,
+                        "status": o.status.value if hasattr(o.status, 'value') else o.status,
                         "total_amount": float(o.total_amount),
                     }
                     for o in orders

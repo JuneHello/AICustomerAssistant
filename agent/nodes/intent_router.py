@@ -15,6 +15,7 @@ import litellm
 import structlog
 
 from agent.state import AgentState
+from core.dependencies import container
 
 logger = structlog.get_logger()
 
@@ -56,7 +57,6 @@ async def intent_router(state: AgentState) -> dict:
 
     logger.info("intent_router.classifying", user_message=user_content[:100])
 
-    from core.dependencies import container
 
     try:
         result = await container.llm_provider.generate_json(

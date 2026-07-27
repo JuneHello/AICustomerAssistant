@@ -3,6 +3,8 @@
 import traceback
 import structlog
 from fastapi import FastAPI, Request, status
+
+from config.settings import get_settings
 from fastapi.responses import JSONResponse
 
 from api.middleware.request_id import get_current_request_id
@@ -41,12 +43,15 @@ def setup_exception_handlers(app: FastAPI) -> None:
             error=str(exc),
             traceback=traceback.format_exc(),
         )
+        content = {
+            "code": 50000,
+            "message": "服务器内部错误，请稍后再试",
+            "request_id": get_current_request_id(),
+        }
+        # 仅开发环境返回异常详情，生产环境隐藏内部信息
+        if get_settings().debug:
+            content["details"] = str(exc)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "code": 50000,
-                "message": "服务器内部错误，请稍后再试",
-                "details": str(exc),
-                "request_id": get_current_request_id(),
-            },
+            content=content,
         )

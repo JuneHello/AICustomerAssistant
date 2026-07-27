@@ -16,6 +16,8 @@ import structlog
 from langchain_core.messages import AIMessage
 
 from agent.state import AgentState
+from core.dependencies import container
+from db.pg_models import SagaLog, SagaStepStatus
 
 logger = structlog.get_logger()
 
@@ -116,8 +118,6 @@ async def post_approval_handler(state: AgentState) -> dict:
         })
 
         # 持久化 Saga 事务日志到 PostgreSQL saga_logs 表
-        from core.dependencies import container
-        from db.pg_models import SagaLog, SagaStepStatus
 
         try:
             async with container.db_postgres.session() as session:

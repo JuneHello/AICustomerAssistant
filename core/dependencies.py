@@ -37,6 +37,9 @@ class DIContainer:
         self.order_service = OrderService(self.db_mysql)
         self.refund_service = RefundService(self.db_postgres)
 
+        # ===== 3. 编译后的 Agent 图（在 initialize 中一次性构建）=====
+        self.agent_graph = None
+
     async def initialize(self) -> None:
         """服务启动时触发组件的异步初始化与连接池预热。"""
         async with self._lock:
@@ -51,7 +54,11 @@ class DIContainer:
             await self.cache_redis.initialize()
 
             # 2. 会话状态 checkpointer
-            await self.session_manager.get_checkpointer()
+            checkpointer = await self.session_manager.get_checkpointer()
+
+            # 3. 一次性编译 Agent 图并缓存，避免每次请求重复编译
+            from agent.graph import compile_agent_graph
+            self.agent_graph = compile_agent_graph(checkpointer=checkpointer)
 
             self._initialized = True
             logger.info("container.initialized_successfully")
@@ -64,15 +71,16 @@ class DIContainer:
 
             logger.info("container.closing_components")
 
-            if self.session_manager:
+            if self.session_manager.checkpointer is not None:
                 await self.session_manager.close()
-            if self.cache_redis:
+            if self.cache_redis.client is not None:
                 await self.cache_redis.close()
-            if self.db_mysql:
+            if self.db_mysql.engine is not None:
                 await self.db_mysql.close()
-            if self.db_postgres:
+            if self.db_postgres.engine is not None:
                 await self.db_postgres.close()
 
+            self.agent_graph = None
             self._initialized = False
             logger.info("container.closed_successfully")
 

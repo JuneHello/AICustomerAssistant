@@ -9,6 +9,7 @@ import structlog
 from langchain_core.messages import AIMessage
 
 from agent.state import AgentState
+from core.dependencies import container
 from prompts.assembler import assemble_prompt
 
 logger = structlog.get_logger()
@@ -64,8 +65,6 @@ async def response_synthesizer(state: AgentState) -> dict:
         has_rag=bool(rag_context),
         has_tool_error=bool(tool_error),
     )
-
-    from core.dependencies import container
 
     try:
         reply_content = await container.llm_provider.generate(

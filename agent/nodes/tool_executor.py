@@ -5,6 +5,9 @@ Level 2 - 业务拒绝 (4xx): 不重试，翻译为用户可读文本
 Level 3 - 不可恢复: 道歉 + 自动转人工，禁止 LLM 编造结果
 """
 
+import inspect
+import traceback
+
 import structlog
 from tenacity import (
     retry,
@@ -99,7 +102,6 @@ async def tool_executor(state: AgentState) -> dict:
 
     try:
         # 1. 检查工具必填参数是否已在 entities 中提供
-        import inspect
         underlying_func = getattr(tool_func, "func", None) or getattr(tool_func, "coroutine", None) or tool_func
         sig = inspect.signature(underlying_func)  # type: ignore[arg-type]
         missing_args = []
@@ -181,7 +183,6 @@ async def tool_executor(state: AgentState) -> dict:
 
     except Exception as e:
         # Level 3: 不可恢复
-        import traceback
         traceback.print_exc()
         logger.error("tool_executor.unrecoverable", error=str(e), tool=tool_func.name)
         return {
